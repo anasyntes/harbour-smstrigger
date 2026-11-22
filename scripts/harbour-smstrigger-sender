@@ -1,0 +1,60 @@
+#!/bin/sh
+# Runs as a systemd --user oneshot service, started on demand by the app.
+# It keeps running (and sleeping) even if the app that triggered it is
+# closed, because it's a separate process managed by systemd, not a
+# child of the app.
+set -eu
+
+CONF="$HOME/.config/harbour-smstrigger/harbour-smstrigger.conf"
+
+get_value() {
+    key="$1"
+    awk -v k="$key" '
+        /^\[SmsTrigger\]/ { insec=1; next }
+        /^\[/             { insec=0 }
+        insec && index($0, k "=") == 1 {
+            print substr($0, length(k) + 2)
+            exit
+        }
+    ' "$CONF" 2>/dev/null || true
+}
+
+if [ ! -f "$CONF" ]; then
+    logger -t harbour-smstrigger "Config file not found at $CONF — open the app and set your phone number/codes first."
+    exit 1
+fi
+
+PHONE=$(get_value phoneNumber)
+CODE1=$(get_value firstCode)
+CODE2=$(get_value secondCode)
+DELAY_MIN=$(get_value delayMinutes)
+MODEM=$(get_value modemPath)
+
+[ -z "$MODEM" ] && MODEM="/ril_0"
+[ -z "$DELAY_MIN" ] && DELAY_MIN=5
+
+if [ -z "$PHONE" ] || [ -z "$CODE1" ] || [ -z "$CODE2" ]; then
+    logger -t harbour-smstrigger "Phone number or codes are empty in config — open the app, fill in Settings, then try again."
+    exit 1
+fi
+
+send_sms() {
+    text="$1"
+    logger -t harbour-smstrigger "Sending SMS to $PHONE via modem $MODEM"
+    if ! dbus-send --system --type=method_call --print-reply \
+            --dest=org.ofono "$MODEM" org.ofono.MessageManager.SendMessage \
+            string:"$PHONE" string:"$text" >/tmp/harbour-smstrigger-last-send.log 2>&1; then
+        logger -t harbour-smstrigger "SendMessage call failed — see /tmp/harbour-smstrigger-last-send.log"
+        return 1
+    fi
+    logger -t harbour-smstrigger "SendMessage call succeeded"
+}
+
+send_sms "$CODE1" || true
+
+logger -t harbour-smstrigger "Sleeping ${DELAY_MIN} minute(s) before second code"
+sleep "$((DELAY_MIN * 60))"
+
+send_sms "$CODE2" || true
+
+logger -t harbour-smstrigger "Sequence finished"

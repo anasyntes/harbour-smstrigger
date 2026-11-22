@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+X-Nemo-Application-Type=silica-qt5
+Icon=harbour-smstrigger
+Exec=harbour-smstrigger
+Name=SMS Trigger
+Name[en]=SMS Trigger

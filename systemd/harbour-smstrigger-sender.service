@@ -1,0 +1,6 @@
+[Unit]
+Description=SMS Trigger background sender (sends pre-programmed SMS codes with a delay)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/harbour-smstrigger-sender
